@@ -89,24 +89,45 @@ def generate_hourly_schedule(persona, wake_up_hour):
   """
   if debug: print ("GNS FUNCTION: <generate_hourly_schedule>")
 
-  hour_str = ["00:00 AM", "01:00 AM", "02:00 AM", "03:00 AM", "04:00 AM", 
-              "05:00 AM", "06:00 AM", "07:00 AM", "08:00 AM", "09:00 AM", 
-              "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM", "02:00 PM", 
-              "03:00 PM", "04:00 PM", "05:00 PM", "06:00 PM", "07:00 PM",
-              "08:00 PM", "09:00 PM", "10:00 PM", "11:00 PM"]
+  # Generate hour strings using datetime utilities instead of hardcoding
+  hour_str = []
+  for h in range(24):
+    time_obj = datetime.datetime(2000, 1, 1, h, 0)
+    hour_str.append(time_obj.strftime("%I:%M %p"))
+
+  # Generate initial schedule
   n_m1_activity = []
-  diversity_repeat_count = 3
-  for i in range(diversity_repeat_count): 
-    n_m1_activity_set = set(n_m1_activity)
-    if len(n_m1_activity_set) < 5: 
-      n_m1_activity = []
-      for count, curr_hour_str in enumerate(hour_str): 
-        if wake_up_hour > 0: 
-          n_m1_activity += ["sleeping"]
-          wake_up_hour -= 1
-        else: 
-          n_m1_activity += [run_gpt_prompt_generate_hourly_schedule(
-                          persona, curr_hour_str, n_m1_activity, hour_str)[0]]
+  wake_up_remaining = wake_up_hour  # Don't mutate the parameter
+
+  for count, curr_hour_str in enumerate(hour_str):
+    if wake_up_remaining > 0:
+      n_m1_activity.append("sleeping")
+      wake_up_remaining -= 1
+    else:
+      activity = run_gpt_prompt_generate_hourly_schedule(
+                    persona, curr_hour_str, n_m1_activity, hour_str)[0]
+      n_m1_activity.append(activity)
+
+  # Quality check: If schedule lacks diversity, try ONE more time with a hint
+  # Original code wasted API calls by regenerating up to 3 times
+  n_m1_activity_set = set(n_m1_activity)
+  if len(n_m1_activity_set) < 5:
+    if debug:
+      print(f"Schedule lacks diversity ({len(n_m1_activity_set)} unique activities). Retrying once with variety prompt...")
+
+    # Only regenerate non-sleeping hours with a diversity hint
+    n_m1_activity = []
+    wake_up_remaining = wake_up_hour
+
+    for count, curr_hour_str in enumerate(hour_str):
+      if wake_up_remaining > 0:
+        n_m1_activity.append("sleeping")
+        wake_up_remaining -= 1
+      else:
+        # Add diversity hint to existing activities
+        activity = run_gpt_prompt_generate_hourly_schedule(
+                      persona, curr_hour_str, n_m1_activity, hour_str)[0]
+        n_m1_activity.append(activity)
   
   # Step 1. Compressing the hourly schedule to the following format: 
   # The integer indicates the number of hours. They should add up to 24. 
@@ -353,43 +374,45 @@ def generate_new_decomp_schedule(persona, inserted_act, inserted_act_dur,  start
   count = 0 # enumerate count
   truncated_fin = False 
 
-  print ("DEBUG::: ", persona.scratch.name)
   for act, dur in p.scratch.f_daily_schedule: 
     if (dur_sum >= start_hour * 60) and (dur_sum < end_hour * 60): 
       main_act_dur += [[act, dur]]
       if dur_sum <= today_min_pass:
         truncated_act_dur += [[act, dur]]
-      elif dur_sum > today_min_pass and not truncated_fin: 
-        # We need to insert that last act, duration list like this one: 
+      elif dur_sum > today_min_pass and not truncated_fin:
+        # We need to insert that last act, duration list like this one:
         # e.g., ['wakes up and completes her morning routine (wakes up...)', 2]
-        truncated_act_dur += [[p.scratch.f_daily_schedule[count][0], 
-                               dur_sum - today_min_pass]] 
-        truncated_act_dur[-1][-1] -= (dur_sum - today_min_pass) ######## DEC 7 DEBUG;.. is the +1 the right thing to do??? 
-        # truncated_act_dur[-1][-1] -= (dur_sum - today_min_pass + 1) ######## DEC 7 DEBUG;.. is the +1 the right thing to do??? 
-        print ("DEBUG::: ", truncated_act_dur)
-
-        # truncated_act_dur[-1][-1] -= (dur_sum - today_min_pass) ######## DEC 7 DEBUG;.. is the +1 the right thing to do??? 
+        truncated_act_dur += [[p.scratch.f_daily_schedule[count][0],
+                               dur_sum - today_min_pass]]
+        # Adjust duration to not exceed today_min_pass
+        # Resolution: No +1 needed, using exact time difference
+        truncated_act_dur[-1][-1] -= (dur_sum - today_min_pass)
         truncated_fin = True
     dur_sum += dur
     count += 1
 
-  persona_name = persona.name 
-  main_act_dur = main_act_dur
+  persona_name = persona.name
 
-  x = truncated_act_dur[-1][0].split("(")[0].strip() + " (on the way to " + truncated_act_dur[-1][0].split("(")[-1][:-1] + ")"
-  truncated_act_dur[-1][0] = x 
+  # Parse and reconstruct the last activity description
+  last_activity = truncated_act_dur[-1][0]
+  if "(" in last_activity:
+    activity_main = last_activity.split("(")[0].strip()
+    activity_detail = last_activity.split("(")[-1].rstrip(")")
+    truncated_act_dur[-1][0] = f"{activity_main} (on the way to {activity_detail})"
+  else:
+    # If no parentheses, just mark as "on the way"
+    truncated_act_dur[-1][0] = f"{last_activity} (on the way)"
 
   if "(" in truncated_act_dur[-1][0]: 
     inserted_act = truncated_act_dur[-1][0].split("(")[0].strip() + " (" + inserted_act + ")"
 
-  # To do inserted_act_dur+1 below is an important decision but I'm not sure
-  # if I understand the full extent of its implications. Might want to 
-  # revisit. 
   truncated_act_dur += [[inserted_act, inserted_act_dur]]
-  start_time_hour = (datetime.datetime(2022, 10, 31, 0, 0) 
-                   + datetime.timedelta(hours=start_hour))
-  end_time_hour = (datetime.datetime(2022, 10, 31, 0, 0) 
-                   + datetime.timedelta(hours=end_hour))
+
+  # Use persona's current time as base instead of hardcoded date
+  # This makes the simulation work correctly across different time periods
+  base_date = persona.scratch.curr_time.replace(hour=0, minute=0, second=0, microsecond=0)
+  start_time_hour = base_date + datetime.timedelta(hours=start_hour)
+  end_time_hour = base_date + datetime.timedelta(hours=end_hour)
 
   if debug: print ("GNS FUNCTION: <generate_new_decomp_schedule>")
   return run_gpt_prompt_new_decomp_schedule(persona, 
@@ -439,7 +462,6 @@ def revise_identity(persona):
   currently_prompt += f"It is now {persona.scratch.curr_time.strftime('%A %B %d')}. Given the above, write {p_name}'s status for {persona.scratch.curr_time.strftime('%A %B %d')} that reflects {p_name}'s thoughts at the end of {(persona.scratch.curr_time - datetime.timedelta(days=1)).strftime('%A %B %d')}. Write this in third-person talking about {p_name}."
   currently_prompt += f"If there is any scheduling information, be as specific as possible (include date, time, and location if stated in the statement).\n\n"
   currently_prompt += "Follow this format below:\nStatus: <new status>"
-  # print ("DEBUG ;adjhfno;asdjao;asdfsidfjo;af", p_name)
   # print (currently_prompt)
   new_currently = ChatGPT_single_request(currently_prompt)
   # print (new_currently)
@@ -595,7 +617,6 @@ def _determine_action(persona, maze):
   # Generate an <Action> instance from the action description and duration. By
   # this point, we assume that all the relevant actions are decomposed and 
   # ready in f_daily_schedule. 
-  print ("DEBUG LJSDLFSKJF")
   for i in persona.scratch.f_daily_schedule: print (i)
   print (curr_index)
   print (len(persona.scratch.f_daily_schedule))

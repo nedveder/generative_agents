@@ -134,40 +134,33 @@ def read_file_to_set(curr_file, col=0):
   return analysis_set
 
 
-def get_row_len(curr_file): 
+def get_row_len(curr_file):
   """
-  Get the number of rows in a csv file 
+  Get the number of rows in a csv file
   ARGS:
-    curr_file: path to the current csv file. 
-  RETURNS: 
+    curr_file: path to the current csv file.
+  RETURNS:
     The number of rows
-    False if the file does not exist
+    0 if the file does not exist
   """
-  try: 
-    analysis_set = set()
-    with open(curr_file) as f_analysis_file: 
+  try:
+    with open(curr_file) as f_analysis_file:
       data_reader = csv.reader(f_analysis_file, delimiter=",")
-      for count, row in enumerate(data_reader): 
-        analysis_set.add(row[0])
-    return len(analysis_set)
-  except: 
-    return False
+      return sum(1 for _ in data_reader)
+  except (FileNotFoundError, PermissionError, IOError):
+    return 0
 
 
-def check_if_file_exists(curr_file): 
+def check_if_file_exists(curr_file):
   """
   Checks if a file exists
   ARGS:
-    curr_file: path to the current csv file. 
-  RETURNS: 
+    curr_file: path to the current file.
+  RETURNS:
     True if the file exists
     False if the file does not exist
   """
-  try: 
-    with open(curr_file) as f_analysis_file: pass
-    return True
-  except: 
-    return False
+  return os.path.isfile(curr_file)
 
 
 def find_filenames(path_to_dir, suffix=".csv"):
