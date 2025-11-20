@@ -6,78 +6,150 @@ Description: Wrapper functions for calling OpenAI APIs.
 """
 import json
 import random
-import openai
-import time 
+import logging
+from openai import OpenAI, RateLimitError, APIError, APITimeoutError
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+import time
 
 from utils import *
 
-openai.api_key = openai_api_key
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('generative_agents.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+client = OpenAI(api_key=openai_api_key)
+
+# API usage tracking
+class APIUsageTracker:
+    def __init__(self):
+        self.total_requests = 0
+        self.total_tokens = 0
+        self.failed_requests = 0
+
+    def log_request(self, success=True, tokens=0):
+        self.total_requests += 1
+        if success:
+            self.total_tokens += tokens
+        else:
+            self.failed_requests += 1
+
+        if self.total_requests % 10 == 0:
+            logger.info(f"API Stats - Total: {self.total_requests}, Tokens: {self.total_tokens}, Failed: {self.failed_requests}")
+
+usage_tracker = APIUsageTracker()
 
 def temp_sleep(seconds=0.1):
   time.sleep(seconds)
 
-def ChatGPT_single_request(prompt): 
+@retry(
+    wait=wait_exponential(multiplier=1, min=4, max=60),
+    stop=stop_after_attempt(5),
+    retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIError))
+)
+def ChatGPT_single_request(prompt):
   temp_sleep()
 
-  completion = openai.ChatCompletion.create(
-    model="gpt-3.5-turbo", 
-    messages=[{"role": "user", "content": prompt}]
-  )
-  return completion["choices"][0]["message"]["content"]
+  try:
+    completion = client.chat.completions.create(
+      model=ACTIVE_CHAT_MODEL,
+      messages=[{"role": "user", "content": prompt}]
+    )
+    tokens = completion.usage.total_tokens if hasattr(completion, 'usage') else 0
+    usage_tracker.log_request(success=True, tokens=tokens)
+    return completion.choices[0].message.content
+  except (RateLimitError, APITimeoutError, APIError) as e:
+    logger.error(f"API error in ChatGPT_single_request: {str(e)}")
+    usage_tracker.log_request(success=False)
+    raise  # Let retry decorator handle it
+  except Exception as e:
+    logger.error(f"Unexpected error in ChatGPT_single_request: {str(e)}")
+    usage_tracker.log_request(success=False)
+    raise
 
 
 # ============================================================================
 # #####################[SECTION 1: CHATGPT-3 STRUCTURE] ######################
 # ============================================================================
 
-def GPT4_request(prompt): 
+@retry(
+    wait=wait_exponential(multiplier=1, min=4, max=60),
+    stop=stop_after_attempt(5),
+    retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIError))
+)
+def GPT4_request(prompt):
   """
   Given a prompt and a dictionary of GPT parameters, make a request to OpenAI
-  server and returns the response. 
+  server and returns the response.
   ARGS:
     prompt: a str prompt
-    gpt_parameter: a python dictionary with the keys indicating the names of  
-                   the parameter and the values indicating the parameter 
-                   values.   
-  RETURNS: 
-    a str of GPT-3's response. 
+    gpt_parameter: a python dictionary with the keys indicating the names of
+                   the parameter and the values indicating the parameter
+                   values.
+  RETURNS:
+    a str of GPT-4's response.
   """
   temp_sleep()
 
-  try: 
-    completion = openai.ChatCompletion.create(
-    model="gpt-4", 
-    messages=[{"role": "user", "content": prompt}]
+  try:
+    completion = client.chat.completions.create(
+      model=ACTIVE_CHAT_MODEL,
+      messages=[{"role": "user", "content": prompt}]
     )
-    return completion["choices"][0]["message"]["content"]
-  
-  except: 
-    print ("ChatGPT ERROR")
+    tokens = completion.usage.total_tokens if hasattr(completion, 'usage') else 0
+    usage_tracker.log_request(success=True, tokens=tokens)
+    return completion.choices[0].message.content
+
+  except (RateLimitError, APITimeoutError, APIError) as e:
+    logger.error(f"API error in GPT4_request: {str(e)}")
+    usage_tracker.log_request(success=False)
+    raise  # Let retry decorator handle it
+  except Exception as e:
+    logger.error(f"Unexpected error in GPT4_request: {str(e)}")
+    usage_tracker.log_request(success=False)
     return "ChatGPT ERROR"
 
 
-def ChatGPT_request(prompt): 
+@retry(
+    wait=wait_exponential(multiplier=1, min=4, max=60),
+    stop=stop_after_attempt(5),
+    retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIError))
+)
+def ChatGPT_request(prompt):
   """
   Given a prompt and a dictionary of GPT parameters, make a request to OpenAI
-  server and returns the response. 
+  server and returns the response.
   ARGS:
     prompt: a str prompt
-    gpt_parameter: a python dictionary with the keys indicating the names of  
-                   the parameter and the values indicating the parameter 
-                   values.   
-  RETURNS: 
-    a str of GPT-3's response. 
+    gpt_parameter: a python dictionary with the keys indicating the names of
+                   the parameter and the values indicating the parameter
+                   values.
+  RETURNS:
+    a str of GPT-4's response.
   """
   # temp_sleep()
-  try: 
-    completion = openai.ChatCompletion.create(
-    model="gpt-3.5-turbo", 
-    messages=[{"role": "user", "content": prompt}]
+  try:
+    completion = client.chat.completions.create(
+      model=ACTIVE_CHAT_MODEL,
+      messages=[{"role": "user", "content": prompt}]
     )
-    return completion["choices"][0]["message"]["content"]
-  
-  except: 
-    print ("ChatGPT ERROR")
+    tokens = completion.usage.total_tokens if hasattr(completion, 'usage') else 0
+    usage_tracker.log_request(success=True, tokens=tokens)
+    return completion.choices[0].message.content
+
+  except (RateLimitError, APITimeoutError, APIError) as e:
+    logger.error(f"API error in ChatGPT_request: {str(e)}")
+    usage_tracker.log_request(success=False)
+    raise  # Let retry decorator handle it
+  except Exception as e:
+    logger.error(f"Unexpected error in ChatGPT_request: {str(e)}")
+    usage_tracker.log_request(success=False)
     return "ChatGPT ERROR"
 
 
@@ -194,21 +266,26 @@ def ChatGPT_safe_generate_response_OLD(prompt,
 # ###################[SECTION 2: ORIGINAL GPT-3 STRUCTURE] ###################
 # ============================================================================
 
-def GPT_request(prompt, gpt_parameter): 
+@retry(
+    wait=wait_exponential(multiplier=1, min=4, max=60),
+    stop=stop_after_attempt(5),
+    retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIError))
+)
+def GPT_request(prompt, gpt_parameter):
   """
   Given a prompt and a dictionary of GPT parameters, make a request to OpenAI
-  server and returns the response. 
+  server and returns the response.
   ARGS:
     prompt: a str prompt
-    gpt_parameter: a python dictionary with the keys indicating the names of  
-                   the parameter and the values indicating the parameter 
-                   values.   
-  RETURNS: 
-    a str of GPT-3's response. 
+    gpt_parameter: a python dictionary with the keys indicating the names of
+                   the parameter and the values indicating the parameter
+                   values.
+  RETURNS:
+    a str of GPT-3.5's response.
   """
   temp_sleep()
-  try: 
-    response = openai.Completion.create(
+  try:
+    response = client.completions.create(
                 model=gpt_parameter["engine"],
                 prompt=prompt,
                 temperature=gpt_parameter["temperature"],
@@ -218,9 +295,16 @@ def GPT_request(prompt, gpt_parameter):
                 presence_penalty=gpt_parameter["presence_penalty"],
                 stream=gpt_parameter["stream"],
                 stop=gpt_parameter["stop"],)
+    tokens = response.usage.total_tokens if hasattr(response, 'usage') else 0
+    usage_tracker.log_request(success=True, tokens=tokens)
     return response.choices[0].text
-  except: 
-    print ("TOKEN LIMIT EXCEEDED")
+  except (RateLimitError, APITimeoutError, APIError) as e:
+    logger.error(f"API error in GPT_request: {str(e)}")
+    usage_tracker.log_request(success=False)
+    raise  # Let retry decorator handle it
+  except Exception as e:
+    logger.error(f"Unexpected error in GPT_request: {str(e)}")
+    usage_tracker.log_request(success=False)
     return "TOKEN LIMIT EXCEEDED"
 
 
@@ -273,16 +357,36 @@ def safe_generate_response(prompt,
   return fail_safe_response
 
 
-def get_embedding(text, model="text-embedding-ada-002"):
+@retry(
+    wait=wait_exponential(multiplier=1, min=4, max=60),
+    stop=stop_after_attempt(5),
+    retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIError))
+)
+def get_embedding(text, model=None):
+  if model is None:
+    model = ACTIVE_EMBEDDING_MODEL
+
   text = text.replace("\n", " ")
-  if not text: 
+  if not text:
     text = "this is blank"
-  return openai.Embedding.create(
-          input=[text], model=model)['data'][0]['embedding']
+
+  try:
+    response = client.embeddings.create(input=[text], model=model)
+    tokens = response.usage.total_tokens if hasattr(response, 'usage') else 0
+    usage_tracker.log_request(success=True, tokens=tokens)
+    return response.data[0].embedding
+  except (RateLimitError, APITimeoutError, APIError) as e:
+    logger.error(f"API error in get_embedding: {str(e)}")
+    usage_tracker.log_request(success=False)
+    raise
+  except Exception as e:
+    logger.error(f"Unexpected error in get_embedding: {str(e)}")
+    usage_tracker.log_request(success=False)
+    raise
 
 
 if __name__ == '__main__':
-  gpt_parameter = {"engine": "text-davinci-003", "max_tokens": 50, 
+  gpt_parameter = {"engine": "gpt-3.5-turbo-instruct", "max_tokens": 50, 
                    "temperature": 0, "top_p": 1, "stream": False,
                    "frequency_penalty": 0, "presence_penalty": 0, 
                    "stop": ['"']}

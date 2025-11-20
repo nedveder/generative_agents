@@ -303,7 +303,7 @@ class ReverieServer:
     game_obj_cleanup = dict()
 
     # The main while loop of Reverie. 
-    while (True): 
+    while True:
       # Done with this iteration if <int_counter> reaches 0. 
       if int_counter == 0: 
         break
@@ -392,13 +392,14 @@ class ReverieServer:
                                              .strftime("%B %d, %Y, %H:%M:%S"))
 
           # We then write the personas' movements to a file that will be sent 
-          # to the frontend server. 
-          # Example json output: 
+          # to the frontend server.
+          # Example json output:
           # {"persona": {"Maria Lopez": {"movement": [58, 9]}},
-          #  "persona": {"Klaus Mueller": {"movement": [38, 12]}}, 
+          #  "persona": {"Klaus Mueller": {"movement": [38, 12]}},
           #  "meta": {curr_time: <datetime>}}
           curr_move_file = f"{sim_folder}/movement/{self.step}.json"
-          with open(curr_move_file, "w") as outfile: 
+          create_folder_if_not_there(curr_move_file)  # Ensure directory exists
+          with open(curr_move_file, "w") as outfile:
             outfile.write(json.dumps(movements, indent=2))
 
           # After this cycle, the world takes one step forward, and the 
